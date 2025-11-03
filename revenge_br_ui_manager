@@ -1,0 +1,405 @@
+using { /Fortnite.com/Devices }
+using { /Fortnite.com/UI }
+using { /Verse.org/Simulation }
+using { /Verse.org/Colors }
+using { /UnrealEngine.com/Temporary/UI }
+using { /UnrealEngine.com/Temporary/Diagnostics }
+using { /Fortnite.com/Game }
+
+# ============================================================================
+# REVENGE BATTLE ROYALE - UI SYSTEM
+# ============================================================================
+# Manages all UI elements: public billboards, private HUDs, notifications
+# ============================================================================
+
+revenge_br_ui_manager := class(creative_device):
+
+    # ========== PUBLIC BILLBOARD DISPLAYS ==========
+    var BountyBoardUI:canvas = canvas{}
+    var LeaderboardUI:canvas = canvas{}
+    var KillStreakUI:canvas = canvas{}
+
+    # ========== PRIVATE HUD ELEMENTS ==========
+    var ChallengeBoothHUD:[agent]canvas = map{}
+    var BountyTrackerHUD:[agent]canvas = map{}
+    var NotificationHUD:[agent]canvas = map{}
+
+    # ========== TEXT BLOCKS ==========
+    # Bounty Board
+    var BountyBoardTitle:text_block = text_block:
+        DefaultTextColor := NamedColors.Yellow
+        DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+        DefaultShadowOffset := option{vector2{X:=3.0, Y:=2.0}}
+    
+    var MostWantedText:text_block = text_block:
+        DefaultTextColor := NamedColors.Red
+        DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+        DefaultShadowOffset := option{vector2{X:=3.0, Y:=2.0}}
+    
+    var ActiveBountiesText:text_block = text_block:
+        DefaultTextColor := NamedColors.White
+        DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+        DefaultShadowOffset := option{vector2{X:=3.0, Y:=2.0}}
+
+    # Leaderboard
+    var LeaderboardTitle:text_block = text_block:
+        DefaultTextColor := NamedColors.Gold
+        DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+        DefaultShadowOffset := option{vector2{X:=3.0, Y:=2.0}}
+    
+    var TopPlayerText:text_block = text_block:
+        DefaultTextColor := NamedColors.White
+        DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+        DefaultShadowOffset := option{vector2{X:=3.0, Y:=2.0}}
+
+    # Kill Streak
+    var StreakTitle:text_block = text_block:
+        DefaultTextColor := NamedColors.Orange
+        DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+        DefaultShadowOffset := option{vector2{X:=3.0, Y:=2.0}}
+    
+    var StreakText:text_block = text_block:
+        DefaultTextColor := NamedColors.White
+        DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+        DefaultShadowOffset := option{vector2{X:=3.0, Y:=2.0}}
+
+    # ========== INITIALIZATION ==========
+    OnBegin<override>()<suspends>:void =
+        Print("📺 UI Manager - Initializing...")
+        CreatePublicBillboards()
+        Print("✅ UI Manager - Ready!")
+
+    # ========== PUBLIC BILLBOARDS ==========
+    CreatePublicBillboards():void =
+        CreateBountyBoard()
+        CreateLeaderboard()
+        CreateKillStreakBoard()
+
+    CreateBountyBoard():void =
+        Print("📋 Creating Bounty Board")
+        
+        BountyBoardStack := stack_box:
+            Orientation := orientation.Vertical
+            Slots := array:
+                stack_box_slot:
+                    Widget := BountyBoardTitle
+                    Padding := margin{Left:=10.0, Top:=10.0, Right:=10.0, Bottom:=5.0}
+                stack_box_slot:
+                    Widget := MostWantedText
+                    Padding := margin{Left:=10.0, Top:=5.0, Right:=10.0, Bottom:=5.0}
+                stack_box_slot:
+                    Widget := ActiveBountiesText
+                    Padding := margin{Left:=10.0, Top:=5.0, Right:=10.0, Bottom:=10.0}
+        
+        BountyBoardOverlay := overlay:
+            Slots := array:
+                overlay_slot:
+                    VerticalAlignment := vertical_alignment.Top
+                    HorizontalAlignment := horizontal_alignment.Left
+                    Padding := margin{Left:=50.0, Top:=50.0, Right:=0.0, Bottom:=0.0}
+                    Widget := BountyBoardStack
+        
+        set BountyBoardUI = canvas{Slots := array{canvas_slot{Widget := BountyBoardOverlay}}}
+        
+        # Set initial text
+        BountyBoardTitle.SetText("🎯 BOUNTY BOARD")
+        UpdateBountyBoard(0, 0)
+
+    CreateLeaderboard():void =
+        Print("🏆 Creating Leaderboard")
+        
+        LeaderboardStack := stack_box:
+            Orientation := orientation.Vertical
+            Slots := array:
+                stack_box_slot:
+                    Widget := LeaderboardTitle
+                    Padding := margin{Left:=10.0, Top:=10.0, Right:=10.0, Bottom:=5.0}
+                stack_box_slot:
+                    Widget := TopPlayerText
+                    Padding := margin{Left:=10.0, Top:=5.0, Right:=10.0, Bottom:=10.0}
+        
+        LeaderboardOverlay := overlay:
+            Slots := array:
+                overlay_slot:
+                    VerticalAlignment := vertical_alignment.Top
+                    HorizontalAlignment := horizontal_alignment.Right
+                    Padding := margin{Left:=0.0, Top:=50.0, Right:=50.0, Bottom:=0.0}
+                    Widget := LeaderboardStack
+        
+        set LeaderboardUI = canvas{Slots := array{canvas_slot{Widget := LeaderboardOverlay}}}
+        
+        # Set initial text
+        LeaderboardTitle.SetText("👑 LEADERBOARD")
+        UpdateLeaderboard(0, 0, 0)
+
+    CreateKillStreakBoard():void =
+        Print("🔥 Creating Kill Streak Board")
+        
+        StreakStack := stack_box:
+            Orientation := orientation.Vertical
+            Slots := array:
+                stack_box_slot:
+                    Widget := StreakTitle
+                    Padding := margin{Left:=10.0, Top:=10.0, Right:=10.0, Bottom:=5.0}
+                stack_box_slot:
+                    Widget := StreakText
+                    Padding := margin{Left:=10.0, Top:=5.0, Right:=10.0, Bottom:=10.0}
+        
+        StreakOverlay := overlay:
+            Slots := array:
+                overlay_slot:
+                    VerticalAlignment := vertical_alignment.Bottom
+                    HorizontalAlignment := horizontal_alignment.Center
+                    Padding := margin{Left:=0.0, Top:=0.0, Right:=0.0, Bottom:=50.0}
+                    Widget := StreakStack
+        
+        set KillStreakUI = canvas{Slots := array{canvas_slot{Widget := StreakOverlay}}}
+        
+        # Set initial text
+        StreakTitle.SetText("🔥 KILL STREAK")
+        UpdateKillStreak(0)
+
+    # ========== UPDATE PUBLIC BILLBOARDS ==========
+    UpdateBountyBoard<localizes>(HighestBounty:int, TotalActiveBounties:int):void =
+        if (HighestBounty > 0):
+            MostWantedMessage:message = "🎯 MOST WANTED: {HighestBounty}g"
+            MostWantedText.SetText(MostWantedMessage)
+        else:
+            MostWantedText.SetText("🎯 No active bounties")
+        
+        BountiesMessage:message = "Active Bounties: {TotalActiveBounties}"
+        ActiveBountiesText.SetText(BountiesMessage)
+
+    UpdateLeaderboard<localizes>(Kills:int, DuelsWon:int, BountiesCollected:int):void =
+        TopPlayerMessage:message = "👑 TOP PLAYER\nKills: {Kills}\nDuels Won: {DuelsWon}\nBounties Collected: {BountiesCollected}"
+        TopPlayerText.SetText(TopPlayerMessage)
+
+    UpdateKillStreak<localizes>(Streak:int):void =
+        if (Streak > 0):
+            StreakMessage:message = "🔥 STREAK: {Streak} KILLS"
+            StreakText.SetText(StreakMessage)
+        else:
+            StreakText.SetText("No active streak")
+
+    # ========== CHALLENGE BOOTH HUD ==========
+    ShowChallengeBoothHUD(Agent:agent, PendingChallenges:int, BountiesOnPlayer:int, BountyAmount:int):void =
+        Print("📱 Showing Challenge Booth HUD to agent")
+        
+        # Create HUD elements
+        ChallengeInfoText := text_block:
+            DefaultTextColor := NamedColors.White
+            DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+            DefaultShadowOffset := option{vector2{X:=2.0, Y:=2.0}}
+        
+        BountyInfoText := text_block:
+            DefaultTextColor := NamedColors.Red
+            DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+            DefaultShadowOffset := option{vector2{X:=2.0, Y:=2.0}}
+        
+        InstructionsText := text_block:
+            DefaultTextColor := NamedColors.Yellow
+            DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+            DefaultShadowOffset := option{vector2{X:=2.0, Y:=2.0}}
+        
+        # Set text content
+        if (PendingChallenges > 0):
+            ChallengeMessage<localizes>:message = "⚔️ {PendingChallenges} Challenge(s) Pending"
+            ChallengeInfoText.SetText(ChallengeMessage)
+        else:
+            ChallengeInfoText.SetText("No pending challenges")
+        
+        if (BountiesOnPlayer > 0):
+            BountyMessage<localizes>:message = "⚠️ BOUNTY: {BountyAmount}g\n{BountiesOnPlayer} hunter(s) tracking you!"
+            BountyInfoText.SetText(BountyMessage)
+        else:
+            BountyInfoText.SetText("✅ No bounties on you")
+        
+        InstructionsText.SetText("🟢 GREEN - Accept Challenge\n🔴 RED - Flip Bounty (1500g)")
+        
+        # Create HUD layout
+        BoothHUDStack := stack_box:
+            Orientation := orientation.Vertical
+            Slots := array:
+                stack_box_slot:
+                    Widget := ChallengeInfoText
+                    Padding := margin{Left:=0.0, Top:=0.0, Right:=0.0, Bottom:=10.0}
+                stack_box_slot:
+                    Widget := BountyInfoText
+                    Padding := margin{Left:=0.0, Top:=0.0, Right:=0.0, Bottom:=10.0}
+                stack_box_slot:
+                    Widget := InstructionsText
+                    Padding := margin{Left:=0.0, Top:=0.0, Right:=0.0, Bottom:=0.0}
+        
+        BoothHUDOverlay := overlay:
+            Slots := array:
+                overlay_slot:
+                    VerticalAlignment := vertical_alignment.Center
+                    HorizontalAlignment := horizontal_alignment.Center
+                    Widget := BoothHUDStack
+        
+        BoothHUDCanvas := canvas:
+            Slots := array:
+                canvas_slot:
+                    Widget := BoothHUDOverlay
+        
+        if (set ChallengeBoothHUD[Agent] = BoothHUDCanvas):
+            # Show to player
+            if (Player := player[Agent]):
+                if (PlayerUI := GetPlayerUI[Player]):
+                    PlayerUI.AddWidget(BoothHUDCanvas)
+
+    HideChallengeBoothHUD(Agent:agent):void =
+        Print("📴 Hiding Challenge Booth HUD")
+        
+        if (HUD := ChallengeBoothHUD[Agent]):
+            if (Player := player[Agent]):
+                if (PlayerUI := GetPlayerUI[Player]):
+                    PlayerUI.RemoveWidget(HUD)
+            
+            # Remove from map
+            if (set ChallengeBoothHUD[Agent] = false):
+                Print("✅ HUD removed")
+
+    # ========== BOUNTY TRACKER HUD ==========
+    ShowBountyTracker(Hunter:agent, TargetDistance:float, TargetDirection:string):void =
+        Print("🎯 Updating bounty tracker")
+        
+        TrackerText := text_block:
+            DefaultTextColor := NamedColors.Red
+            DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+            DefaultShadowOffset := option{vector2{X:=2.0, Y:=2.0}}
+        
+        DistanceRounded := Floor(TargetDistance)
+        TrackerMessage<localizes>:message = "🎯 TARGET: {DistanceRounded}m {TargetDirection}"
+        TrackerText.SetText(TrackerMessage)
+        
+        TrackerOverlay := overlay:
+            Slots := array:
+                overlay_slot:
+                    VerticalAlignment := vertical_alignment.Top
+                    HorizontalAlignment := horizontal_alignment.Center
+                    Padding := margin{Left:=0.0, Top:=100.0, Right:=0.0, Bottom:=0.0}
+                    Widget := TrackerText
+        
+        TrackerCanvas := canvas:
+            Slots := array:
+                canvas_slot:
+                    Widget := TrackerOverlay
+        
+        if (set BountyTrackerHUD[Hunter] = TrackerCanvas):
+            if (Player := player[Hunter]):
+                if (PlayerUI := GetPlayerUI[Player]):
+                    # Remove old tracker if exists
+                    if (OldTracker := BountyTrackerHUD[Hunter]):
+                        PlayerUI.RemoveWidget(OldTracker)
+                    
+                    # Add new tracker
+                    PlayerUI.AddWidget(TrackerCanvas)
+
+    HideBountyTracker(Hunter:agent):void =
+        if (Tracker := BountyTrackerHUD[Hunter]):
+            if (Player := player[Hunter]):
+                if (PlayerUI := GetPlayerUI[Player]):
+                    PlayerUI.RemoveWidget(Tracker)
+            
+            if (set BountyTrackerHUD[Hunter] = false):
+                Print("✅ Tracker removed")
+
+    # ========== NOTIFICATIONS ==========
+    ShowNotification(Agent:agent, NotificationType:notification_type, MessageText:string):void =
+        Print("🔔 Showing notification: {MessageText}")
+        
+        NotificationText := text_block:
+            DefaultTextColor := GetNotificationColor(NotificationType)
+            DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+            DefaultShadowOffset := option{vector2{X:=3.0, Y:=3.0}}
+        
+        NotificationText.SetText(MessageText)
+        
+        NotificationOverlay := overlay:
+            Slots := array:
+                overlay_slot:
+                    VerticalAlignment := vertical_alignment.Top
+                    HorizontalAlignment := horizontal_alignment.Center
+                    Padding := margin{Left:=0.0, Top:=200.0, Right:=0.0, Bottom:=0.0}
+                    Widget := NotificationText
+        
+        NotificationCanvas := canvas:
+            Slots := array:
+                canvas_slot:
+                    Widget := NotificationOverlay
+        
+        if (Player := player[Agent]):
+            if (PlayerUI := GetPlayerUI[Player]):
+                PlayerUI.AddWidget(NotificationCanvas)
+                
+                # Auto-hide after 3 seconds
+                spawn{AutoHideNotification(Agent, NotificationCanvas)}
+
+    AutoHideNotification(Agent:agent, NotificationCanvas:canvas)<suspends>:void =
+        Sleep(3.0)
+        
+        if (Player := player[Agent]):
+            if (PlayerUI := GetPlayerUI[Player]):
+                PlayerUI.RemoveWidget(NotificationCanvas)
+
+    GetNotificationColor(NotificationType:notification_type):color =
+        case(NotificationType):
+            notification_type.Success => NamedColors.Green
+            notification_type.Warning => NamedColors.Yellow
+            notification_type.Error => NamedColors.Red
+            notification_type.Info => NamedColors.Cyan
+            _ => NamedColors.White
+
+    # ========== DECISION ROOM UI ==========
+    ShowDecisionRoomUI(Agent:agent, HasGold:logic):void =
+        Print("🚪 Showing Decision Room UI")
+        
+        TitleText := text_block:
+            DefaultTextColor := NamedColors.Yellow
+            DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+            DefaultShadowOffset := option{vector2{X:=3.0, Y:=3.0}}
+        
+        OptionsText := text_block:
+            DefaultTextColor := NamedColors.White
+            DefaultShadowColor := color{R:=0.0, G:=0.0, B:=0.0}
+            DefaultShadowOffset := option{vector2{X:=2.0, Y:=2.0}}
+        
+        TitleText.SetText("💀 YOU WERE ELIMINATED")
+        
+        if (HasGold):
+            OptionsText.SetText("Choose your fate:\n\n💰 Place Bounty (1000g)\nGet revenge on your killer!\n\n⏭️ Skip\nRespawn and continue")
+        else:
+            OptionsText.SetText("Not enough gold to place bounty\n\n⏭️ Skip to respawn")
+        
+        DecisionStack := stack_box:
+            Orientation := orientation.Vertical
+            Slots := array:
+                stack_box_slot:
+                    Widget := TitleText
+                    Padding := margin{Left:=0.0, Top:=0.0, Right:=0.0, Bottom:=20.0}
+                stack_box_slot:
+                    Widget := OptionsText
+        
+        DecisionOverlay := overlay:
+            Slots := array:
+                overlay_slot:
+                    VerticalAlignment := vertical_alignment.Center
+                    HorizontalAlignment := horizontal_alignment.Center
+                    Widget := DecisionStack
+        
+        DecisionCanvas := canvas:
+            Slots := array:
+                canvas_slot:
+                    Widget := DecisionOverlay
+        
+        if (Player := player[Agent]):
+            if (PlayerUI := GetPlayerUI[Player]):
+                PlayerUI.AddWidget(DecisionCanvas)
+
+# ========== ENUMS ==========
+notification_type := enum:
+    Success
+    Warning
+    Error
+    Info
