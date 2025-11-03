@@ -1,0 +1,507 @@
+using { /Fortnite.com/Devices }
+using { /Fortnite.com/UI }
+using { /Verse.org/Simulation }
+using { /Verse.org/Colors }
+using { /UnrealEngine.com/Temporary/SpatialMath }
+using { /UnrealEngine.com/Temporary/Diagnostics }
+using { /UnrealEngine.com/Temporary/UI }
+using { /Fortnite.com/Characters }
+using { /Fortnite.com/Game }
+using { /Verse.org/Random }
+
+# ============================================================================
+# REVENGE BATTLE ROYALE - MAIN GAME MANAGER
+# ============================================================================
+# This is the core system that manages the entire revenge-based battle royale
+# with duels, bounties, and counter-bounty mechanics
+# ============================================================================
+
+revenge_battle_royale := class(creative_device):
+
+    # ========== DECISION ROOM SETUP ==========
+    @editable
+    DecisionRoomTeleporter:teleporter_device = teleporter_device{}
+    
+    @editable
+    DecisionRoomVolume:volume_device = volume_device{}
+    
+    @editable
+    PlaceBountyTrigger:trigger_device = trigger_device{}
+    
+    @editable
+    SkipBountyTrigger:trigger_device = trigger_device{}
+
+    # ========== CHALLENGE BOOTH SETUP ==========
+    @editable
+    ChallengeBoothVolume:volume_device = volume_device{}
+    
+    @editable
+    AcceptChallengeButton:button_device = button_device{}
+    
+    @editable
+    FlipBountyButton:button_device = button_device{}
+
+    # ========== DUEL ARENA SETUP ==========
+    @editable
+    DuelArenaTeleporter:teleporter_device = teleporter_device{}
+    
+    @editable
+    DuelArenaVolume:volume_device = volume_device{}
+    
+    @editable
+    BatItemGranter:item_granter_device = item_granter_device{}
+    
+    @editable
+    SwordItemGranter:item_granter_device = item_granter_device{}
+    
+    @editable
+    CountdownDevice:countdown_device = countdown_device{}
+
+    # ========== REWARD SYSTEM ==========
+    @editable
+    MythicWeaponGranter:item_granter_device = item_granter_device{}
+    
+    @editable
+    GoldGranter:item_granter_device = item_granter_device{}
+    
+    @editable
+    HealthRestoreDevice:damage_volume_device = damage_volume_device{}
+
+    # ========== RESPAWN SYSTEM ==========
+    @editable
+    MainMapRespawner:player_spawner_device = player_spawner_device{}
+
+    # ========== TRACKING SYSTEM ==========
+    @editable
+    TrackerDevices:[]tracker_device = array{}
+
+    # ========== PLAYER DATA STRUCTURES ==========
+    # Store all active challenges (killer -> victim mapping)
+    var ActiveChallenges:[agent]challenge_data = map{}
+    
+    # Store all active bounties (target -> bounty info)
+    var ActiveBounties:[agent]bounty_data = map{}
+    
+    # Store player gold amounts
+    var PlayerGold:[agent]int = map{}
+    
+    # Store player stats
+    var PlayerStats:[agent]player_statistics = map{}
+    
+    # Track who's in a duel
+    var PlayersInDuel:[agent]logic = map{}
+
+    # ========== CONSTANTS ==========
+    BountyPlacementCost:int = 1000
+    BountyFlipCost:int = 1500
+    BountyRewardPerHunter:int = 500
+    ChallengeTimeoutSeconds:float = 45.0
+    DuelCountdownSeconds:int = 3
+
+    # ========== INITIALIZATION ==========
+    OnBegin<override>()<suspends>:void =
+        Print("🎮 REVENGE BATTLE ROYALE - Initializing...")
+        
+        # Subscribe to elimination events
+        InitializeEliminationTracking()
+        
+        # Subscribe to decision room events
+        DecisionRoomVolume.AgentEntersEvent.Subscribe(OnEnterDecisionRoom)
+        PlaceBountyTrigger.TriggeredEvent.Subscribe(OnPlaceBountyTriggered)
+        SkipBountyTrigger.TriggeredEvent.Subscribe(OnSkipBountyTriggered)
+        
+        # Subscribe to challenge booth events
+        ChallengeBoothVolume.AgentEntersEvent.Subscribe(OnEnterChallengeBooths)
+        ChallengeBoothVolume.AgentExitsEvent.Subscribe(OnExitChallengeBooth)
+        AcceptChallengeButton.InteractedWithEvent.Subscribe(OnAcceptChallenge)
+        FlipBountyButton.InteractedWithEvent.Subscribe(OnFlipBounty)
+        
+        # Subscribe to duel arena events
+        DuelArenaVolume.AgentEntersEvent.Subscribe(OnEnterDuelArena)
+        
+        # Initialize all players
+        AllPlayers := GetPlayspace().GetPlayers()
+        for (Player : AllPlayers):
+            InitializePlayer(Player)
+        
+        # Subscribe to new players joining
+        GetPlayspace().PlayerAddedEvent().Subscribe(OnPlayerAdded)
+        
+        Print("✅ REVENGE BATTLE ROYALE - Ready!")
+
+    # ========== PLAYER INITIALIZATION ==========
+    InitializePlayer(Player:player):void =
+        if (Agent := Player.GetAgent[]):
+            # Initialize gold
+            if (not PlayerGold[Agent]):
+                if (set PlayerGold[Agent] = 2000): # Starting gold
+                    Print("💰 Player initialized with 2000 gold")
+            
+            # Initialize stats
+            if (not PlayerStats[Agent]):
+                NewStats := player_statistics{
+                    Kills := 0
+                    DuelsWon := 0
+                    BountiesCollected := 0
+                    CurrentStreak := 0
+                }
+                if (set PlayerStats[Agent] = NewStats):
+                    Print("📊 Player stats initialized")
+
+    OnPlayerAdded(Player:player):void =
+        InitializePlayer(Player)
+
+    # ========== ELIMINATION TRACKING ==========
+    InitializeEliminationTracking():void =
+        # In real implementation, you'd use:
+        # GetPlayspace().PlayerEliminatedEvent().Subscribe(OnPlayerEliminated)
+        # For now, we'll set up a manual trigger system
+        Print("🔫 Elimination tracking initialized")
+
+    OnPlayerEliminated(Result:elimination_game_event):void =
+        Print("💀 Player eliminated!")
+        
+        if:
+            EliminatingAgent := Result.EliminatingCharacter.GetAgent[]
+            EliminatedAgent := Result.EliminatedCharacter.GetAgent[]
+        then:
+            # Create challenge
+            CreateChallenge(EliminatingAgent, EliminatedAgent)
+            
+            # Teleport eliminated player to decision room
+            TeleportToDecisionRoom(EliminatedAgent)
+            
+            # Notify killer
+            NotifyKiller(EliminatingAgent)
+            
+            # Update stats
+            IncrementKills(EliminatingAgent)
+
+    # ========== CHALLENGE SYSTEM ==========
+    CreateChallenge(Killer:agent, Victim:agent):void =
+        Print("⚔️ Creating challenge: Killer vs Victim")
+        
+        NewChallenge := challenge_data{
+            Challenger := Killer
+            Victim := Victim
+            TimeCreated := GetSimulationElapsedTime()
+            Accepted := false
+        }
+        
+        if (set ActiveChallenges[Killer] = NewChallenge):
+            Print("✅ Challenge created")
+            
+            # Start timeout timer
+            spawn{ChallengeTimeout(Killer, Victim)}
+
+    ChallengeTimeout(Killer:agent, Victim:agent)<suspends>:void =
+        Sleep(ChallengeTimeoutSeconds)
+        
+        # Check if challenge still exists and wasn't accepted
+        if (Challenge := ActiveChallenges[Killer]):
+            if (Challenge.Accepted = false):
+                Print("⏰ Challenge expired - victim can now place bounty")
+                # Challenge expired, victim can now decide
+                EnableBountyDecision(Victim)
+
+    NotifyKiller(Killer:agent):void =
+        # TODO: Show HUD notification
+        # "⚔️ CHALLENGE AVAILABLE! Visit the booth!"
+        Print("🔔 Notifying killer: Challenge available")
+
+    # ========== DECISION ROOM ==========
+    TeleportToDecisionRoom(Victim:agent):void =
+        Print("📍 Teleporting victim to decision room")
+        DecisionRoomTeleporter.Teleport(Victim)
+
+    OnEnterDecisionRoom(Agent:agent):void =
+        Print("🚪 Agent entered decision room")
+        # Initially disable both triggers
+        PlaceBountyTrigger.Disable()
+        SkipBountyTrigger.Disable()
+
+    EnableBountyDecision(Victim:agent):void =
+        Print("🎯 Enabling bounty decision for victim")
+        PlaceBountyTrigger.Enable()
+        SkipBountyTrigger.Enable()
+        
+        # TODO: Show UI to victim
+        # "Place Bounty (1000g)" or "Skip"
+
+    OnPlaceBountyTriggered(MaybeAgent:?agent):void =
+        if (Agent := MaybeAgent?):
+            Print("💰 Player wants to place bounty")
+            
+            # Find who killed this player (check recent challenges)
+            if (Killer := FindKillerForVictim(Agent)):
+                PlaceBounty(Agent, Killer)
+
+    OnSkipBountyTriggered(MaybeAgent:?agent):void =
+        if (Agent := MaybeAgent?):
+            Print("⏭️ Player skipped bounty - respawning")
+            RespawnPlayer(Agent)
+
+    # ========== BOUNTY SYSTEM ==========
+    PlaceBounty(Victim:agent, Target:agent):void =
+        Print("🎯 Placing bounty on target")
+        
+        # Check if victim has enough gold
+        if (Gold := PlayerGold[Victim]):
+            if (Gold >= BountyPlacementCost):
+                # Deduct gold
+                if (set PlayerGold[Victim] = Gold - BountyPlacementCost):
+                    # Add or update bounty
+                    if (ExistingBounty := ActiveBounties[Target]):
+                        # Bounty already exists, add to it
+                        NewAmount := ExistingBounty.TotalAmount + BountyPlacementCost
+                        var NewHunters := ExistingBounty.Hunters
+                        NewHunters += Victim
+                        
+                        UpdatedBounty := bounty_data{
+                            Target := Target
+                            TotalAmount := NewAmount
+                            Hunters := NewHunters
+                        }
+                        
+                        if (set ActiveBounties[Target] = UpdatedBounty):
+                            Print("📈 Bounty increased to {NewAmount}g")
+                    else:
+                        # Create new bounty
+                        NewBounty := bounty_data{
+                            Target := Target
+                            TotalAmount := BountyPlacementCost
+                            Hunters := array{Victim}
+                        }
+                        
+                        if (set ActiveBounties[Target] = NewBounty):
+                            Print("🆕 New bounty placed: {BountyPlacementCost}g")
+                    
+                    # Start tracking
+                    StartTracking(Victim, Target)
+                    
+                    # Respawn the victim
+                    RespawnPlayer(Victim)
+            else:
+                Print("❌ Not enough gold to place bounty")
+                # TODO: Show error message
+
+    StartTracking(Hunter:agent, Target:agent):void =
+        Print("👁️ Starting tracking: Hunter -> Target")
+        # TODO: Implement real-time tracking updates
+        # Update distance every 3-8 seconds based on proximity
+        spawn{TrackingLoop(Hunter, Target)}
+
+    TrackingLoop(Hunter:agent, Target:agent)<suspends>:void =
+        loop:
+            if (BountyData := ActiveBounties[Target]):
+                # Check if this hunter is still tracking
+                var IsTracking:logic = false
+                for (ActiveHunter : BountyData.Hunters):
+                    if (ActiveHunter = Hunter):
+                        set IsTracking = true
+                
+                if (IsTracking = false):
+                    # This hunter is no longer tracking
+                    break
+                
+                # Calculate distance and update interval
+                if:
+                    HunterChar := Hunter.GetFortCharacter[]
+                    TargetChar := Target.GetFortCharacter[]
+                    HunterTransform := HunterChar.GetTransform[]
+                    TargetTransform := TargetChar.GetTransform[]
+                then:
+                    Distance := Distance(HunterTransform.Translation, TargetTransform.Translation)
+                    
+                    # Update interval based on distance
+                    UpdateInterval:float = if (Distance < 50.0) then 3.0 else if (Distance < 100.0) then 5.0 else 8.0
+                    
+                    # TODO: Show tracking update to hunter
+                    Print("🎯 Target is {Floor(Distance)}m away")
+                    
+                    Sleep(UpdateInterval)
+            else:
+                # Bounty no longer exists
+                break
+            
+            Sleep(1.0)
+
+    # ========== CHALLENGE BOOTH ==========
+    OnEnterChallengeBooths(Agent:agent):void =
+        Print("🏪 Agent entered challenge booth")
+        ShowChallengeBoothUI(Agent)
+
+    OnExitChallengeBooth(Agent:agent):void =
+        Print("🚪 Agent exited challenge booth")
+        HideChallengeBoothUI(Agent)
+
+    ShowChallengeBoothUI(Agent:agent):void =
+        # TODO: Show private HUD with:
+        # - Pending challenges
+        # - Bounties on this player
+        # - Accept/Flip buttons
+        Print("📺 Showing challenge booth UI")
+
+    HideChallengeBoothUI(Agent:agent):void =
+        Print("📴 Hiding challenge booth UI")
+
+    OnAcceptChallenge(Agent:agent):void =
+        Print("✅ Player accepted challenge!")
+        
+        if (Challenge := ActiveChallenges[Agent]):
+            # Mark as accepted
+            AcceptedChallenge := challenge_data{
+                Challenger := Challenge.Challenger
+                Victim := Challenge.Victim
+                TimeCreated := Challenge.TimeCreated
+                Accepted := true
+            }
+            
+            if (set ActiveChallenges[Agent] = AcceptedChallenge):
+                # Start duel
+                StartDuel(Challenge.Challenger, Challenge.Victim)
+
+    OnFlipBounty(Agent:agent):void =
+        Print("🔄 Player wants to flip bounty!")
+        
+        if (BountyData := ActiveBounties[Agent]):
+            # Check if player has enough gold
+            if (Gold := PlayerGold[Agent]):
+                if (Gold >= BountyFlipCost):
+                    # Deduct gold
+                    if (set PlayerGold[Agent] = Gold - BountyFlipCost):
+                        FlipBounty(Agent, BountyData)
+                else:
+                    Print("❌ Not enough gold to flip bounty")
+
+    FlipBounty(Target:agent, BountyData:bounty_data):void =
+        Print("🔄 FLIPPING BOUNTY!")
+        
+        # Remove bounty from target
+        if (set ActiveBounties[Target] = false):
+            # Place bounties on all hunters
+            for (Hunter : BountyData.Hunters):
+                NewBounty := bounty_data{
+                    Target := Hunter
+                    TotalAmount := BountyRewardPerHunter
+                    Hunters := array{Target}
+                }
+                
+                if (set ActiveBounties[Hunter] = NewBounty):
+                    Print("🎯 Bounty placed on former hunter")
+                    # Start tracking in reverse
+                    StartTracking(Target, Hunter)
+
+    # ========== DUEL SYSTEM ==========
+    StartDuel(Challenger:agent, Victim:agent):void =
+        Print("⚔️ STARTING DUEL!")
+        
+        # Mark both as in duel
+        if:
+            set PlayersInDuel[Challenger] = true
+            set PlayersInDuel[Victim] = true
+        then:
+            # Teleport both to arena
+            DuelArenaTeleporter.Teleport(Challenger)
+            DuelArenaTeleporter.Teleport(Victim)
+            
+            # Start countdown
+            spawn{DuelCountdown(Challenger, Victim)}
+
+    DuelCountdown(Challenger:agent, Victim:agent)<suspends>:void =
+        Print("⏱️ Starting duel countdown...")
+        
+        # Wait for both to enter arena
+        Sleep(2.0)
+        
+        # Countdown: 3... 2... 1... FIGHT!
+        for (I := DuelCountdownSeconds, I > 0, I := I - 1):
+            Print("{I}...")
+            # TODO: Show countdown on screen
+            Sleep(1.0)
+        
+        Print("⚔️ FIGHT!")
+        
+        # Grant weapons
+        BatItemGranter.GrantItem(Challenger)
+        SwordItemGranter.GrantItem(Victim)
+
+    OnEnterDuelArena(Agent:agent):void =
+        Print("🏟️ Agent entered duel arena")
+
+    OnDuelEnd(Winner:agent, Loser:agent):void =
+        Print("🏆 DUEL WON!")
+        
+        # Grant rewards to winner
+        MythicWeaponGranter.GrantItem(Winner)
+        
+        # Restore health/shield
+        # TODO: Implement health restore
+        
+        # Clear all bounties on winner
+        if (set ActiveBounties[Winner] = false):
+            Print("🛡️ All bounties cleared from winner")
+        
+        # Update stats
+        IncrementDuelsWon(Winner)
+        
+        # Remove from duel status
+        if:
+            set PlayersInDuel[Winner] = false
+            set PlayersInDuel[Loser] = false
+        then:
+            # Respawn winner to main map
+            MainMapRespawner.SpawnPlayer(Winner)
+
+    # ========== HELPER FUNCTIONS ==========
+    FindKillerForVictim(Victim:agent):?agent =
+        # Search through active challenges to find who killed this victim
+        for (Key->Challenge : ActiveChallenges):
+            if (Challenge.Victim = Victim):
+                return option{Challenge.Challenger}
+        return false
+
+    RespawnPlayer(Agent:agent):void =
+        Print("♻️ Respawning player")
+        MainMapRespawner.SpawnPlayer(Agent)
+
+    IncrementKills(Agent:agent):void =
+        if (Stats := PlayerStats[Agent]):
+            NewStats := player_statistics{
+                Kills := Stats.Kills + 1
+                DuelsWon := Stats.DuelsWon
+                BountiesCollected := Stats.BountiesCollected
+                CurrentStreak := Stats.CurrentStreak + 1
+            }
+            if (set PlayerStats[Agent] = NewStats):
+                Print("📈 Kill count incremented")
+
+    IncrementDuelsWon(Agent:agent):void =
+        if (Stats := PlayerStats[Agent]):
+            NewStats := player_statistics{
+                Kills := Stats.Kills
+                DuelsWon := Stats.DuelsWon + 1
+                BountiesCollected := Stats.BountiesCollected
+                CurrentStreak := Stats.CurrentStreak
+            }
+            if (set PlayerStats[Agent] = NewStats):
+                Print("🏆 Duel wins incremented")
+
+# ========== DATA STRUCTURES ==========
+
+challenge_data := struct:
+    Challenger:agent
+    Victim:agent
+    TimeCreated:float
+    Accepted:logic
+
+bounty_data := struct:
+    Target:agent
+    TotalAmount:int
+    Hunters:[]agent
+
+player_statistics := struct:
+    Kills:int
+    DuelsWon:int
+    BountiesCollected:int
+    CurrentStreak:int
